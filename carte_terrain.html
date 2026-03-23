@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ma Carte Terrain</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background: #111; color: #eee; }
+  #map { position: fixed; inset: 0; z-index: 0; }
+
+  #panel {
+    position: fixed; top: 0; right: 0; z-index: 1000;
+    width: 270px; height: 100%;
+    background: rgba(15,15,25,0.96);
+    border-left: 1px solid rgba(255,255,255,0.08);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  #panel-header {
+    padding: 14px 14px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #panel-header h1 { font-size: 14px; font-weight: 600; letter-spacing: 0.5px; color: #fff; }
+  #panel-body { overflow-y: auto; flex: 1; padding: 8px 8px 20px; }
+  #panel-body::-webkit-scrollbar { width: 4px; }
+  #panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+  .category { margin-bottom: 6px; }
+  .cat-header {
+    font-size: 10px; font-weight: 600; letter-spacing: 1.2px;
+    text-transform: uppercase; color: rgba(255,255,255,0.3);
+    padding: 8px 6px 4px;
+  }
+  .layer-btn {
+    display: flex; align-items: center; gap: 9px;
+    width: 100%; padding: 7px 10px;
+    border-radius: 8px; border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+    cursor: pointer; font-size: 13px; color: #bbb;
+    margin-bottom: 3px; transition: all 0.12s; text-align: left;
+  }
+  .layer-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .layer-btn.active { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: #fff; }
+  .layer-btn.loading { opacity: 0.5; pointer-events: none; }
+  .layer-btn .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .layer-btn .count { margin-left: auto; font-size: 11px; color: rgba(255,255,255,0.3); }
+
+  #status-bar {
+    position: fixed; bottom: 0; left: 0; right: 270px; z-index: 1000;
+    padding: 8px 14px; background: rgba(15,15,25,0.9);
+    border-top: 1px solid rgba(255,255,255,0.06);
+    font-size: 12px; color: rgba(255,255,255,0.4);
+    display: flex; align-items: center; gap: 8px;
+  }
+  #status-text { flex: 1; }
+
+  #locbtn {
+    position: fixed; bottom: 50px; left: 14px; z-index: 1000;
+    background: rgba(15,15,25,0.95); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 50%; width: 44px; height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-size: 20px; transition: background 0.12s;
+  }
+  #locbtn:hover { background: rgba(60,160,100,0.3); border-color: rgba(60,160,100,0.5); }
+
+  #toggle-panel {
+    display: none;
+    position: fixed; top: 12px; right: 12px; z-index: 2000;
+    background: rgba(15,15,25,0.95); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 8px 12px; cursor: pointer;
+    font-size: 13px; color: #fff;
+  }
+
+  @media (max-width: 600px) {
+    #panel { width: 100%; height: auto; top: auto; bottom: 0; right: 0; border-left: none; border-top: 1px solid rgba(255,255,255,0.1); max-height: 55vh; }
+    #panel.collapsed { max-height: 44px; overflow: hidden; }
+    #status-bar { right: 0; bottom: 55vh; }
+    #status-bar.collapsed { bottom: 44px; }
+    #toggle-panel { display: flex; align-items: center; }
+    #locbtn { bottom: calc(55vh + 10px); }
+    #locbtn.collapsed { bottom: 54px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="panel">
+  <div id="panel-header">
+    <h1>🗺 Mes calques</h1>
+    <span id="active-count" style="font-size:11px;color:rgba(255,255,255,0.3)"></span>
+  </div>
+  <div id="panel-body">
+    <div id="layer-list"></div>
+  </div>
+</div>
+
+<div id="status-bar">
+  <span id="status-text">Prêt</span>
+</div>
+
+<button id="locbtn" onclick="locateMe()" title="Me localiser">📍</button>
+<button id="toggle-panel" onclick="togglePanel()">☰ Calques</button>
+
+<script>
+const map = L.map('map', { zoomControl: false }).setView([44.22, 8.31], 13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap',
+  maxZoom: 19
+}).addTo(map);
+
+L.control.zoom({ position: 'topleft' }).addTo(map);
+
+const LAYERS = [
+  { id:'bus',        label:'Arrêts de bus',         cat:'Transports',       color:'#4FC3F7',
+    query:`node["highway"="bus_stop"]({s},{w},{n},{e});out;` },
+  { id:'gare',       label:'Gares',                  cat:'Transports',       color:'#1E88E5',
+    query:`node["railway"="station"]({s},{w},{n},{e});out;` },
+  { id:'velo',       label:'Pistes cyclables',        cat:'Mobilité douce',   color:'#66BB6A',
+    query:`way["highway"="cycleway"]({s},{w},{n},{e});out geom;` },
+  { id:'voie_verte', label:'Voies vertes',             cat:'Mobilité douce',   color:'#43A047',
+    query:`way["highway"="path"]["foot"="designated"]({s},{w},{n},{e});out geom;` },
+  { id:'bio',        label:'Commerces bio',           cat:'Alimentation',     color:'#A5D6A7',
+    query:`(node["organic"="yes"]({s},{w},{n},{e});node["diet:vegan"="yes"]({s},{w},{n},{e}););out;` },
+  { id:'commerce',   label:'Commerces',               cat:'Alimentation',     color:'#FFA726',
+    query:`node["shop"]({s},{w},{n},{e});out;` },
+  { id:'eau',        label:'Eau potable',             cat:'Eau & sanitaires', color:'#29B6F6',
+    query:`node["amenity"="drinking_water"]({s},{w},{n},{e});out;` },
+  { id:'source',     label:'Sources',                 cat:'Eau & sanitaires', color:'#0288D1',
+    query:`node["natural"="spring"]({s},{w},{n},{e});out;` },
+  { id:'toilettes',  label:'Toilettes',               cat:'Eau & sanitaires', color:'#80DEEA',
+    query:`node["amenity"="toilets"]({s},{w},{n},{e});out;` },
+  { id:'dab',        label:'DAB',                     cat:'Argent',           color:'#FFD54F',
+    query:`node["amenity"="atm"]({s},{w},{n},{e});out;` },
+  { id:'poste',      label:'Boîtes aux lettres',      cat:'Courrier',         color:'#CE93D8',
+    query:`node["amenity"="post_box"]({s},{w},{n},{e});out;` },
+  { id:'bureau_poste',label:'Bureaux de poste',       cat:'Courrier',         color:'#AB47BC',
+    query:`node["amenity"="post_office"]({s},{w},{n},{e});out;` },
+  { id:'hostel',     label:'Auberges de jeunesse',    cat:'Hébergement',      color:'#FFAB91',
+    query:`node["tourism"="hostel"]({s},{w},{n},{e});out;` },
+  { id:'camping',    label:'Campings',                cat:'Hébergement',      color:'#FF8A65',
+    query:`node["tourism"="camp_site"]({s},{w},{n},{e});out;` },
+  { id:'refuge',     label:'Refuges de montagne',     cat:'Hébergement',      color:'#FF7043',
+    query:`node["tourism"="alpine_hut"]({s},{w},{n},{e});out;` },
+  { id:'abri',       label:'Abris sommaires',         cat:'Hébergement',      color:'#A1887F',
+    query:`node["tourism"="wilderness_hut"]({s},{w},{n},{e});out;` },
+  { id:'gite',       label:'Gîtes',                   cat:'Hébergement',      color:'#BCAAA4',
+    query:`node["tourism"="guest_house"]({s},{w},{n},{e});out;` },
+  { id:'parc',       label:'Parcs / Pic-nic',         cat:'Nature & loisirs', color:'#81C784',
+    query:`(node["leisure"="park"]({s},{w},{n},{e});node["tourism"="picnic_site"]({s},{w},{n},{e}););out;` },
+  { id:'ornitho',    label:'Points ornitho',          cat:'Nature & loisirs', color:'#B0BEC5',
+    query:`node["leisure"="bird_hide"]({s},{w},{n},{e});out;` },
+  { id:'verre',      label:'Recyclage verre',         cat:'Services',         color:'#4DB6AC',
+    query:`node["amenity"="recycling"]["recycling:glass_bottles"="yes"]({s},{w},{n},{e});out;` },
+  { id:'recyclage',  label:'Recyclage',               cat:'Services',         color:'#26A69A',
+    query:`node["amenity"="recycling"]({s},{w},{n},{e});out;` },
+  { id:'cimetiere',  label:'Cimetières',              cat:'Services',         color:'#78909C',
+    query:`(node["amenity"="grave_yard"]({s},{w},{n},{e});way["amenity"="grave_yard"]({s},{w},{n},{e}););out center;` },
+];
+
+const activeMarkers = {};
+const activeStates  = {};
+let locMarker = null;
+let panelOpen = true;
+
+function getBounds() {
+  const b = map.getBounds();
+  return { s: b.getSouth().toFixed(5), w: b.getWest().toFixed(5),
+           n: b.getNorth().toFixed(5), e: b.getEast().toFixed(5) };
+}
+
+function setStatus(msg) {
+  document.getElementById('status-text').textContent = msg;
+}
+
+function updateActiveCount() {
+  const n = Object.values(activeStates).filter(Boolean).length;
+  document.getElementById('active-count').textContent = n ? `${n} actif${n>1?'s':''}` : '';
+}
+
+function makeIcon(color) {
+  return L.divIcon({
+    html: `<div style="width:11px;height:11px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.8);box-shadow:0 1px 4px rgba(0,0,0,0.6)"></div>`,
+    className: '', iconSize: [11,11], iconAnchor: [5,5]
+  });
+}
+
+async function loadLayer(layer) {
+  const btn = document.getElementById('btn-'+layer.id);
+  if (btn) btn.classList.add('loading');
+  setStatus(`Chargement — ${layer.label}…`);
+
+  const {s,w,n,e} = getBounds();
+  const q = layer.query.replace(/{s}/g,s).replace(/{w}/g,w).replace(/{n}/g,n).replace(/{e}/g,e);
+  const url = 'https://overpass.kumi.systems/api/interpreter?data=' + encodeURIComponent(q);
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    const group = L.layerGroup().addTo(map);
+    activeMarkers[layer.id] = group;
+    let count = 0;
+    data.elements.forEach(el => {
+      let lat, lon;
+      if (el.type === 'node') { lat = el.lat; lon = el.lon; }
+      else if (el.lat && el.lon) { lat = el.lat; lon = el.lon; }
+      else if (el.type === 'way' && el.geometry) { lat = el.geometry[0].lat; lon = el.geometry[0].lon; }
+      if (lat && lon) {
+        const t = el.tags || {};
+        const name = t.name || t['name:fr'] || layer.label;
+        const details = ['opening_hours','phone','website','operator','brand']
+          .filter(k => t[k]).map(k => `<span style="color:#aaa">${k}:</span> ${t[k]}`).join('<br>');
+        L.marker([lat,lon], {icon: makeIcon(layer.color)})
+          .bindPopup(`<b style="color:#222">${name}</b>${details ? '<br><small>'+details+'</small>' : ''}`)
+          .addTo(group);
+        count++;
+      }
+    });
+    setStatus(`${count} résultat${count>1?'s':''} — ${layer.label}`);
+    if (btn) {
+      btn.querySelector('.count').textContent = count || '';
+    }
+  } catch(err) {
+    setStatus(`Erreur de chargement — ${layer.label}`);
+  }
+  if (btn) btn.classList.remove('loading');
+}
+
+function toggleLayer(layer) {
+  const btn = document.getElementById('btn-'+layer.id);
+  if (activeStates[layer.id]) {
+    if (activeMarkers[layer.id]) map.removeLayer(activeMarkers[layer.id]);
+    delete activeMarkers[layer.id];
+    activeStates[layer.id] = false;
+    if (btn) { btn.classList.remove('active'); btn.querySelector('.count').textContent = ''; }
+    setStatus('Calque désactivé — ' + layer.label);
+  } else {
+    activeStates[layer.id] = true;
+    if (btn) btn.classList.add('active');
+    loadLayer(layer);
+  }
+  updateActiveCount();
+}
+
+map.on('moveend', () => {
+  Object.keys(activeStates).forEach(id => {
+    if (!activeStates[id]) return;
+    const layer = LAYERS.find(l => l.id === id);
+    if (activeMarkers[id]) map.removeLayer(activeMarkers[id]);
+    if (layer) loadLayer(layer);
+  });
+});
+
+function locateMe() {
+  setStatus('Localisation en cours…');
+  map.locate({ setView: true, maxZoom: 16 });
+  map.once('locationfound', e => {
+    if (locMarker) map.removeLayer(locMarker);
+    locMarker = L.layerGroup([
+      L.circle(e.latlng, { radius: e.accuracy/2, color:'#4FC3F7', fillColor:'#4FC3F7', fillOpacity:0.1, weight:1 }),
+      L.circleMarker(e.latlng, { radius:8, color:'#fff', fillColor:'#4FC3F7', fillOpacity:1, weight:2 })
+    ]).addTo(map);
+    setStatus('Vous êtes ici (précision ±' + Math.round(e.accuracy) + 'm)');
+  });
+  map.once('locationerror', () => setStatus('Géolocalisation non disponible'));
+}
+
+function togglePanel() {
+  panelOpen = !panelOpen;
+  document.getElementById('panel').classList.toggle('collapsed', !panelOpen);
+  document.getElementById('status-bar').classList.toggle('collapsed', !panelOpen);
+  document.getElementById('locbtn').classList.toggle('collapsed', !panelOpen);
+}
+
+const cats = {};
+LAYERS.forEach(l => { if (!cats[l.cat]) cats[l.cat] = []; cats[l.cat].push(l); });
+const list = document.getElementById('layer-list');
+Object.entries(cats).forEach(([cat, layers]) => {
+  const div = document.createElement('div');
+  div.className = 'category';
+  div.innerHTML = `<div class="cat-header">${cat}</div>`;
+  layers.forEach(layer => {
+    const btn = document.createElement('button');
+    btn.className = 'layer-btn';
+    btn.id = 'btn-' + layer.id;
+    btn.innerHTML = `<span class="dot" style="background:${layer.color}"></span><span style="flex:1">${layer.label}</span><span class="count"></span>`;
+    btn.onclick = () => toggleLayer(layer);
+    div.appendChild(btn);
+  });
+  list.appendChild(div);
+});
+</script>
+</body>
+</html>
