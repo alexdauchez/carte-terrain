@@ -44,7 +44,7 @@
     margin-bottom: 3px; transition: all 0.12s; text-align: left;
   }
   .layer-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
-  .layer-btn.active { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: #fff; }
+  .layer-btn.active { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.5); color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2); }
   .layer-btn.loading { opacity: 0.5; pointer-events: none; }
   .layer-btn .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
   .layer-btn .count { margin-left: auto; font-size: 11px; color: rgba(255,255,255,0.3); }
@@ -110,9 +110,9 @@
 <script>
 const map = L.map('map', { zoomControl: false }).setView([44.22, 8.31], 13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap',
-  maxZoom: 19
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenTopoMap | © OpenStreetMap',
+  maxZoom: 17
 }).addTo(map);
 
 L.control.zoom({ position: 'topleft' }).addTo(map);
@@ -186,8 +186,8 @@ function updateActiveCount() {
 
 function makeIcon(color) {
   return L.divIcon({
-    html: `<div style="width:11px;height:11px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.8);box-shadow:0 1px 4px rgba(0,0,0,0.6)"></div>`,
-    className: '', iconSize: [11,11], iconAnchor: [5,5]
+    html: `<svg width="20" height="28" viewBox="0 0 20 28" xmlns="http://www.w3.org/2000/svg"><path d="M10 0C4.48 0 0 4.48 0 10c0 7 10 18 10 18s10-11 10-18c0-5.52-4.48-10-10-10z" fill="${color}" stroke="white" stroke-width="1.5"/><circle cx="10" cy="10" r="4" fill="white" fill-opacity="0.85"/></svg>`,
+    className: '', iconSize: [20,28], iconAnchor: [10,28]
   });
 }
 
@@ -238,11 +238,11 @@ function toggleLayer(layer) {
     if (activeMarkers[layer.id]) map.removeLayer(activeMarkers[layer.id]);
     delete activeMarkers[layer.id];
     activeStates[layer.id] = false;
-    if (btn) { btn.classList.remove('active'); btn.querySelector('.count').textContent = ''; }
+    if (btn) { btn.classList.remove('active'); btn.querySelector('.count').textContent = ''; btn.querySelector('.check').textContent = ''; }
     setStatus('Calque désactivé — ' + layer.label);
   } else {
     activeStates[layer.id] = true;
-    if (btn) btn.classList.add('active');
+    if (btn) { btn.classList.add('active'); btn.querySelector('.check').textContent = '✓'; }
     loadLayer(layer);
   }
   updateActiveCount();
@@ -289,7 +289,7 @@ Object.entries(cats).forEach(([cat, layers]) => {
     const btn = document.createElement('button');
     btn.className = 'layer-btn';
     btn.id = 'btn-' + layer.id;
-    btn.innerHTML = `<span class="dot" style="background:${layer.color}"></span><span style="flex:1">${layer.label}</span><span class="count"></span>`;
+    btn.innerHTML = `<span class="dot" style="background:${layer.color}"></span><span style="flex:1">${layer.label}</span><span class="check" style="font-size:12px;margin-left:2px"></span><span class="count"></span>`;
     btn.onclick = () => toggleLayer(layer);
     div.appendChild(btn);
   });
