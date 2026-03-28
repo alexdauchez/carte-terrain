@@ -198,7 +198,7 @@ async function loadLayer(layer) {
 
   const {s,w,n,e} = getBounds();
   const q = layer.query.replace(/{s}/g,s).replace(/{w}/g,w).replace(/{n}/g,n).replace(/{e}/g,e);
-  const url = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://overpass-api.de/api/interpreter?data=' + q);
+  const url = 'https://wispy-sun-95c0.wr8dq4pwn9.workers.dev/?data=' + encodeURIComponent(q);
 
   try {
     const res = await fetch(url);
